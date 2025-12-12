@@ -1,7 +1,11 @@
 FROM httpd:2.4-alpine
 
+# Create gpt user and add to existing www-data group
+RUN adduser -S gpt -G www-data
+
 # Install system dependencies for Perl modules
 RUN apk add --no-cache \
+    bash \
     perl \
     perl-cgi \
     perl-dev \
@@ -74,11 +78,31 @@ COPY *.pm /usr/local/apache2/htdocs/
 COPY sqtpm.cfg /usr/local/apache2/htdocs/
 COPY google-code-prettify/ /usr/local/apache2/htdocs/google-code-prettify/
 
-# Make CGI scripts executable
+# Make CGI scripts executable and set ownership
 RUN chmod +x /usr/local/apache2/htdocs/*.cgi
+RUN chown -R gpt:www-data /usr/local/apache2/htdocs/
 
 # Create necessary directories
 RUN mkdir -p /usr/local/apache2/htdocs/Utils
 COPY Utils/ /usr/local/apache2/htdocs/Utils/
 
+# Copy sqtpm-etc-localhost.sh to server root and create symlink
+RUN cp /usr/local/apache2/htdocs/Utils/sqtpm-etc-localhost.sh /usr/local/apache2/htdocs/ && \
+    ln -s /usr/local/apache2/htdocs/sqtpm-etc-localhost.sh /usr/local/apache2/htdocs/sqtpm-etc.sh
+
+# Fix file permissions using the provided script
+RUN cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh
+
+# Create startup script
+RUN echo '#!/bin/sh' > /usr/local/bin/start-sqtpm.sh && \
+    echo 'cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh' >> /usr/local/bin/start-sqtpm.sh && \
+    echo 'exec httpd-foreground' >> /usr/local/bin/start-sqtpm.sh && \
+    chmod +x /usr/local/bin/start-sqtpm.sh
+
+# Configure Apache to run as gpt user
+RUN echo "User gpt" >> /usr/local/apache2/conf/httpd.conf
+RUN echo "Group www-data" >> /usr/local/apache2/conf/httpd.conf
+
 EXPOSE 80
+
+CMD ["/usr/local/bin/start-sqtpm.sh"]

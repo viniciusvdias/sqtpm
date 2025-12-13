@@ -1542,11 +1542,11 @@ sub submit_assignment {
       (exists($cfg{'g++-args'})) or ($cfg{'g++-args'} = '');
 
       open(my $MAKE,'>',"$userd/Makefile") or abort($uid,$assign,"submit : write Makefile: $!");
-      print $MAKE "CC = $cfg{'g++'}\n",
+      print $MAKE "CXX = $cfg{'g++'}\n",
 	"CFLAGS = $cfg{'g++-args'}\n",
 	"SRC = \$(wildcard *.cpp)\n",
 	"elf: \$(SRC:%.cpp=%.o)\n",
-	"\t\$(CC) \$(CFLAGS) -o \$@ \$^ $cfg{'g++-ld-args'}\n";
+	"\t\$(CXX) \$(CFLAGS) -o \$@ \$^ $cfg{'g++-ld-args'}\n";
       close($MAKE);
       $compcmd = "$cfg{'make'}";
     }
@@ -1575,10 +1575,12 @@ sub submit_assignment {
     my $elff = "$userd/elf";
     my $outf = "$userd/out";
     my $errf = "$userd/err";
+    my $makef = "$userd/Makefile";
 
     if ($status) {
       $rep .= 'com erros.<br><div class="io">'; 
-      $rep .= load_file($uid,$assign,$outf,1);
+      $rep .= load_file($uid,$assign,$outf,1, 2500);
+      $rep .= load_file($uid,$assign,$makef,1,2500);
       $rep .= load_file($uid,$assign,$errf,1,2500);
       $rep .= '</div>';
       

@@ -66,6 +66,7 @@ RUN echo "    Require all granted" >> /usr/local/apache2/conf/httpd.conf
 RUN echo "</Directory>" >> /usr/local/apache2/conf/httpd.conf
 
 # Copy all content to document root
+COPY moss-sqtpm /usr/local/apache2/htdocs/
 COPY *.pass /usr/local/apache2/htdocs/
 COPY *.html /usr/local/apache2/htdocs/
 COPY *.css /usr/local/apache2/htdocs/

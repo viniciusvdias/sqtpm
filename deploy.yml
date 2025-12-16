@@ -4,7 +4,8 @@
 # Option 1: Simple assignment -> password files mapping
 assignments:
   test_assignment1: ["users1.pass"]
-  test_assignment2: ["users2.pass"]
+  test_assignment2: ["users2.pass", "admins.pass"]
+  test_assignment3: []  # No password files
 
 # Option 2: Deployment groups (alternative format)
 # deployments:
@@ -20,4 +21,4 @@ assignments:
 # container: "my-sqtpm-web-1"
 
 # Optional: Skip container build/start
-no_build: true
+# no_build: true

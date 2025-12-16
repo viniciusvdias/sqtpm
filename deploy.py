@@ -60,7 +60,7 @@ def wait_for_container(container_name, max_wait=60):
     return False
 
 def create_docker_compose_override(assignments, config_file=None):
-    """Create docker-compose.yml with volume mappings for assignments and config file"""
+    """Create docker-compose.override.yml with volume mappings for assignments and config file"""
     import yaml
     import os
     
@@ -88,8 +88,8 @@ def create_docker_compose_override(assignments, config_file=None):
     
     if not all_volumes:
         # Remove override file if no volumes needed
-        if os.path.exists("docker-compose.yml"):
-            os.remove("docker-compose.yml")
+        if os.path.exists("docker-compose.override.yml"):
+            os.remove("docker-compose.override.yml")
         return True
     
     override_config = {
@@ -104,14 +104,14 @@ def create_docker_compose_override(assignments, config_file=None):
     }
     
     try:
-        with open("docker-compose.yml", "w") as f:
+        with open("docker-compose.override.yml", "w") as f:
             yaml.dump(override_config, f, default_flow_style=False)
         assignment_count = len(assignment_volumes)
         config_count = len(config_volumes)
-        print(f"Created docker-compose.yml with {assignment_count} assignment volume(s) and {config_count} config file mapping(s)")
+        print(f"Created docker-compose.override.yml with {assignment_count} assignment volume(s) and {config_count} config file mapping(s)")
         return True
     except Exception as e:
-        print(f"Error creating docker-compose.yml: {e}")
+        print(f"Error creating docker-compose.override.yml: {e}")
         return False
 
 def copy_pass_files_to_container(pass_files, container_name="sqtpm-sqtpm-web-1"):

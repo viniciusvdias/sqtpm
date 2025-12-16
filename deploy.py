@@ -88,8 +88,8 @@ def create_docker_compose_override(assignments, config_file=None):
     
     if not all_volumes:
         # Remove override file if no volumes needed
-        if os.path.exists("docker-compose.override.yml"):
-            os.remove("docker-compose.override.yml")
+        if os.path.exists("docker-compose.yml"):
+            os.remove("docker-compose.yml")
         return True
     
     override_config = {

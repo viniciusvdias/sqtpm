@@ -2,12 +2,17 @@ version: '3.8'
 
 services:
   sqtpm-web:
-    build: .
+    build:
+      context: .
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+        HOST_USER: ${HOST_USER:-user}
     ports:
       - "8080:80"
     volumes:
-      - ./data:/var/www/data  # For storing uploaded files if needed
+      - ./data:/var/www/data
     environment:
-      - APACHE_RUN_USER=www-data
+      - APACHE_RUN_USER=${HOST_USER:-www-data}
       - APACHE_RUN_GROUP=www-data
     restart: unless-stopped

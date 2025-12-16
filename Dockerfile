@@ -1,7 +1,13 @@
 FROM httpd:2.4-alpine
 
-# Create gpt user and add to existing www-data group
-RUN adduser -S gpt -G www-data
+# Accept host user information as build arguments
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG HOST_USER=user
+
+# Create host user and add to existing www-data group
+RUN addgroup -g ${HOST_GID} ${HOST_USER} 2>/dev/null || true
+RUN adduser -S -u ${HOST_UID} -G www-data -G ${HOST_USER} ${HOST_USER}
 
 # Install system dependencies for Perl modules
 RUN apk add --no-cache \
@@ -79,10 +85,6 @@ COPY *.pm /usr/local/apache2/htdocs/
 COPY sqtpm.cfg /usr/local/apache2/htdocs/
 COPY google-code-prettify/ /usr/local/apache2/htdocs/google-code-prettify/
 
-# Make CGI scripts executable and set ownership
-RUN chmod +x /usr/local/apache2/htdocs/*.cgi
-RUN chown -R gpt:www-data /usr/local/apache2/htdocs/
-
 # Create necessary directories
 RUN mkdir -p /usr/local/apache2/htdocs/Utils
 COPY Utils/ /usr/local/apache2/htdocs/Utils/
@@ -91,17 +93,24 @@ COPY Utils/ /usr/local/apache2/htdocs/Utils/
 RUN cp /usr/local/apache2/htdocs/Utils/sqtpm-etc-localhost.sh /usr/local/apache2/htdocs/ && \
     ln -s /usr/local/apache2/htdocs/sqtpm-etc-localhost.sh /usr/local/apache2/htdocs/sqtpm-etc.sh
 
+# Set ownership of all files to host user after all copies are done
+RUN chown -R ${HOST_USER}:www-data /usr/local/apache2/htdocs/
+
 # Fix file permissions using the provided script
 RUN cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh
 
-# Create startup script
+# Create startup script that ensures proper ownership and runs as host user
 RUN echo '#!/bin/sh' > /usr/local/bin/start-sqtpm.sh && \
-    echo 'cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh' >> /usr/local/bin/start-sqtpm.sh && \
-    echo 'exec httpd-foreground' >> /usr/local/bin/start-sqtpm.sh && \
+    echo '# Ensure all files are owned by host user' >> /usr/local/bin/start-sqtpm.sh && \
+    echo "chown -R ${HOST_USER}:www-data /usr/local/apache2/htdocs/" >> /usr/local/bin/start-sqtpm.sh && \
+    echo '# Fix permissions as host user' >> /usr/local/bin/start-sqtpm.sh && \
+    echo "su -s /bin/sh ${HOST_USER} -c 'cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh'" >> /usr/local/bin/start-sqtpm.sh && \
+    echo '# Start Apache' >> /usr/local/bin/start-sqtpm.sh && \
+    echo "exec httpd-foreground" >> /usr/local/bin/start-sqtpm.sh && \
     chmod +x /usr/local/bin/start-sqtpm.sh
 
-# Configure Apache to run as gpt user
-RUN echo "User gpt" >> /usr/local/apache2/conf/httpd.conf
+# Configure Apache to run as host user
+RUN echo "User ${HOST_USER}" >> /usr/local/apache2/conf/httpd.conf
 RUN echo "Group www-data" >> /usr/local/apache2/conf/httpd.conf
 
 EXPOSE 80

@@ -2,14 +2,16 @@
 """
 SQTPM Deployment Script
 
-This script starts the SQTPM container and copies assignment directories
-to the running container's server root. It also manages password file
-symbolic links within assignment directories.
+This script starts the SQTPM container and mounts assignment directories
+as volumes in the container's server root. Password files are copied to 
+the container's server root and symbolic links are created in assignment 
+directories. A custom sqtpm.cfg file can be mounted to override the default 
+configuration. Changes to mounted files are reflected immediately in the container.
 
 Usage:
     python deploy.py assignment1 assignment2 assignment3 ...
     python deploy.py arvore_geradora_minima --pass-files users.pass admins.pass
-    python deploy.py assignment1 --pass-files users.pass
+    python deploy.py assignment1 --pass-files users.pass --config-file my-sqtpm.cfg
 """
 
 import sys
@@ -17,6 +19,7 @@ import os
 import subprocess
 import time
 import argparse
+import yaml
 
 def run_command(cmd, check=True, capture_output=False):
     """Run a shell command"""
@@ -56,34 +59,60 @@ def wait_for_container(container_name, max_wait=60):
     print(f"Container {container_name} did not start within {max_wait} seconds")
     return False
 
-def copy_assignments_to_container(assignments, container_name="sqtpm-sqtpm-web-1"):
-    """Copy assignment directories to the running container"""
-    server_root = "/usr/local/apache2/htdocs"
+def create_docker_compose_override(assignments, config_file=None):
+    """Create docker-compose.override.yml with volume mappings for assignments and config file"""
+    import yaml
+    import os
     
+    # Get absolute paths for assignments and use basename for container mapping
+    assignment_volumes = []
     for assignment in assignments:
-        if not os.path.exists(assignment):
-            print(f"Warning: Assignment directory '{assignment}' does not exist")
-            continue
-            
-        if not os.path.isdir(assignment):
-            print(f"Warning: '{assignment}' is not a directory")
-            continue
-        
-        print(f"Copying assignment '{assignment}' to container...")
-        
-        # Copy the directory to the container
-        try:
-            run_command([
-                "docker", "cp", 
-                f"{assignment}", 
-                f"{container_name}:{server_root}/"
-            ])
-            print(f"Successfully copied {assignment}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error copying {assignment}: {e}")
-            return False
+        if os.path.exists(assignment) and os.path.isdir(assignment):
+            abs_path = os.path.abspath(assignment)
+            # Strip trailing slash to ensure basename works correctly
+            assignment_basename = os.path.basename(assignment.rstrip('/'))
+            if not assignment_basename:  # Handle edge case
+                assignment_basename = os.path.basename(abs_path)
+            assignment_volumes.append(f"{abs_path}:/usr/local/apache2/htdocs/{assignment_basename}")
     
-    return True
+    # Add config file mapping if provided
+    config_volumes = []
+    if config_file and os.path.exists(config_file) and os.path.isfile(config_file):
+        abs_config_path = os.path.abspath(config_file)
+        config_volumes.append(f"{abs_config_path}:/usr/local/apache2/htdocs/sqtpm.cfg")
+        print(f"Adding config file mapping: {config_file} -> sqtpm.cfg")
+    elif config_file:
+        print(f"Warning: Config file '{config_file}' does not exist or is not a file")
+    
+    all_volumes = assignment_volumes + config_volumes
+    
+    if not all_volumes:
+        # Remove override file if no volumes needed
+        if os.path.exists("docker-compose.override.yml"):
+            os.remove("docker-compose.override.yml")
+        return True
+    
+    override_config = {
+        'version': '3.8',
+        'services': {
+            'sqtpm-web': {
+                'volumes': [
+                    './data:/var/www/data'  # Keep existing data volume
+                ] + all_volumes
+            }
+        }
+    }
+    
+    try:
+        with open("docker-compose.override.yml", "w") as f:
+            yaml.dump(override_config, f, default_flow_style=False)
+        assignment_count = len(assignment_volumes)
+        config_count = len(config_volumes)
+        print(f"Created docker-compose.override.yml with {assignment_count} assignment volume(s) and {config_count} config file mapping(s)")
+        return True
+    except Exception as e:
+        print(f"Error creating docker-compose.override.yml: {e}")
+        return False
 
 def copy_pass_files_to_container(pass_files, container_name="sqtpm-sqtpm-web-1"):
     """Copy password files to the container's server root"""
@@ -92,7 +121,7 @@ def copy_pass_files_to_container(pass_files, container_name="sqtpm-sqtpm-web-1")
     
     server_root = "/usr/local/apache2/htdocs"
     
-    print(f"Copying password files to container...")
+    print(f"Copying {len(pass_files)} password file(s) to container...")
     
     for pass_file in pass_files:
         if not os.path.exists(pass_file):
@@ -118,8 +147,35 @@ def copy_pass_files_to_container(pass_files, container_name="sqtpm-sqtpm-web-1")
     
     return True
 
+def get_assignment_basenames(assignments):
+    """Get basenames of assignment directories for use in container paths"""
+    basenames = []
+    for assignment in assignments:
+        basename = os.path.basename(assignment.rstrip('/'))  # Remove trailing slash if any
+        if not basename:  # Handle edge case where assignment might be empty or just '/'
+            basename = os.path.basename(os.path.abspath(assignment))
+        basenames.append(basename)
+    return basenames
+
+def validate_assignments(assignments):
+    """Validate that assignment directories exist"""
+    valid_assignments = []
+    for assignment in assignments:
+        if not os.path.exists(assignment):
+            print(f"Warning: Assignment directory '{assignment}' does not exist")
+            continue
+            
+        if not os.path.isdir(assignment):
+            print(f"Warning: '{assignment}' is not a directory")
+            continue
+        
+        valid_assignments.append(assignment)
+        print(f"Validated assignment directory: {assignment}")
+    
+    return valid_assignments
+
 def create_pass_file_links(assignments, pass_files, container_name="sqtpm-sqtpm-web-1"):
-    """Create symbolic links to password files in each assignment directory"""
+    """Create symbolic links to password files in assignment directories"""
     if not pass_files:
         print("No password files specified, skipping symbolic link creation")
         return True
@@ -128,10 +184,17 @@ def create_pass_file_links(assignments, pass_files, container_name="sqtpm-sqtpm-
     
     print(f"Creating symbolic links for password files: {', '.join(pass_files)}")
     
-    for assignment in assignments:
-        assignment_path = f"{server_root}/{assignment}"
+    # Get basenames of assignments for container paths
+    assignment_basenames = get_assignment_basenames(assignments)
+    
+    for assignment, assignment_basename in zip(assignments, assignment_basenames):
+        if not assignment_basename or assignment_basename in ['.', '..']:
+            print(f"Warning: Invalid basename '{assignment_basename}' for assignment '{assignment}', skipping")
+            continue
+            
+        assignment_path = f"{server_root}/{assignment_basename}"
         
-        # Check if assignment directory exists in container
+        # Check if assignment directory exists in container (mounted as volume)
         try:
             result = run_command([
                 "docker", "exec", container_name,
@@ -139,18 +202,21 @@ def create_pass_file_links(assignments, pass_files, container_name="sqtpm-sqtpm-
             ], check=False, capture_output=True)
             
             if result.returncode != 0:
-                print(f"Warning: Assignment directory {assignment} not found in container")
+                print(f"Warning: Assignment directory {assignment_basename} not found in container")
                 continue
                 
         except subprocess.CalledProcessError:
-            print(f"Warning: Could not check assignment directory {assignment}")
+            print(f"Warning: Could not check assignment directory {assignment_basename}")
             continue
         
-        print(f"Creating password file links in {assignment}...")
+        print(f"Creating password file links in {assignment_basename}...")
         
         for pass_file in pass_files:
-            # Check if password file exists in server root
-            pass_file_path = f"{server_root}/{pass_file}"
+            # Extract just the filename from the pass file path
+            pass_file_basename = os.path.basename(pass_file)
+            
+            # Check if password file exists in server root (copied to container)
+            pass_file_path = f"{server_root}/{pass_file_basename}"
             
             try:
                 result = run_command([
@@ -159,16 +225,16 @@ def create_pass_file_links(assignments, pass_files, container_name="sqtpm-sqtpm-
                 ], check=False, capture_output=True)
                 
                 if result.returncode != 0:
-                    print(f"Warning: Password file {pass_file} not found in server root")
+                    print(f"Warning: Password file {pass_file_basename} not found in server root")
                     continue
                     
             except subprocess.CalledProcessError:
-                print(f"Warning: Could not check password file {pass_file}")
+                print(f"Warning: Could not check password file {pass_file_basename}")
                 continue
             
-            # Create symbolic link
-            link_target = f"../{pass_file}"
-            link_path = f"{assignment_path}/{pass_file}"
+            # Create symbolic link using just the basename
+            link_target = f"../{pass_file_basename}"
+            link_path = f"{assignment_path}/{pass_file_basename}"
             
             try:
                 # Remove existing link/file if it exists
@@ -183,13 +249,33 @@ def create_pass_file_links(assignments, pass_files, container_name="sqtpm-sqtpm-
                     "ln", "-s", link_target, link_path
                 ])
                 
-                print(f"  Created link: {assignment}/{pass_file} -> {link_target}")
+                print(f"  Created link: {assignment_basename}/{pass_file_basename} -> {link_target}")
                 
             except subprocess.CalledProcessError as e:
-                print(f"  Error creating link for {pass_file} in {assignment}: {e}")
+                print(f"  Error creating link for {pass_file_basename} in {assignment_basename}: {e}")
                 return False
     
     return True
+
+def validate_pass_files(pass_files):
+    """Validate that password files exist"""
+    if not pass_files:
+        return []
+    
+    valid_pass_files = []
+    for pass_file in pass_files:
+        if not os.path.exists(pass_file):
+            print(f"Warning: Password file '{pass_file}' does not exist locally")
+            continue
+            
+        if not os.path.isfile(pass_file):
+            print(f"Warning: '{pass_file}' is not a file")
+            continue
+        
+        valid_pass_files.append(pass_file)
+        print(f"Validated password file: {pass_file}")
+    
+    return valid_pass_files
 
 def list_pass_files_in_directory(directory="."):
     """List available .pass files in the specified directory"""
@@ -202,17 +288,31 @@ def list_pass_files_in_directory(directory="."):
         pass
     return pass_files
 
-def fix_permissions_in_container(container_name="sqtpm-sqtpm-web-1"):
-    """Run fix-perms.sh script inside the container"""
-    print("Fixing permissions in container...")
+def fix_permissions_in_container(container_name="sqtpm-sqtpm-web-1", host_user=None):
+    """Run fix-perms.sh script inside the container and ensure proper ownership"""
+    print("Fixing permissions and ownership in container...")
+    
+    # Get host user info if not provided
+    if not host_user:
+        import pwd
+        user_info = pwd.getpwuid(os.getuid())
+        host_user = user_info.pw_name
     
     try:
+        # First ensure all files are owned by the host user
         run_command([
             "docker", "exec", container_name,
             "/bin/sh", "-c",
-            "cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh"
+            f"chown -R {host_user}:www-data /usr/local/apache2/htdocs/"
         ])
-        print("Permissions fixed successfully")
+        
+        # Then run the fix-perms script as the host user
+        run_command([
+            "docker", "exec", container_name,
+            "/bin/sh", "-c",
+            f"su -s /bin/sh {host_user} -c 'cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh'"
+        ])
+        print("Permissions and ownership fixed successfully")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Error fixing permissions: {e}")
@@ -227,6 +327,8 @@ Examples:
   python deploy.py arvore_geradora_minima
   python deploy.py arvore_geradora_minima --pass-files users.pass
   python deploy.py assignment1 assignment2 --pass-files users.pass admins.pass
+  python deploy.py assignment1 --config-file custom-sqtpm.cfg
+  python deploy.py assignment1 --pass-files users.pass --config-file custom-sqtpm.cfg
   python deploy.py --container my-sqtpm-web-1 assignment1 --pass-files users.pass
   python deploy.py assignment1 --list-pass-files
         """
@@ -235,13 +337,18 @@ Examples:
     parser.add_argument(
         'assignments',
         nargs='+',
-        help='Assignment directories to copy to the container'
+        help='Assignment directories to mount as volumes in the container'
     )
     
     parser.add_argument(
         '--pass-files',
         nargs='*',
         help='Password files (.pass) to copy to server root and link in assignment directories'
+    )
+    
+    parser.add_argument(
+        '--config-file',
+        help='Custom sqtpm.cfg file to mount/override in the server root'
     )
     
     parser.add_argument(
@@ -278,16 +385,57 @@ Examples:
     print("SQTPM Deployment Script")
     print("=" * 40)
     
+    # Get host user information (needed for both building and fixing permissions)
+    import pwd
+    user_info = pwd.getpwuid(os.getuid())
+    host_uid = user_info.pw_uid
+    host_gid = user_info.pw_gid
+    host_user = user_info.pw_name
+    
     if args.pass_files:
         print(f"Password files to deploy: {', '.join(args.pass_files)}")
     else:
         print("No password files specified")
     
-    # Step 1: Start the container (unless --no-build is specified)
+    if args.config_file:
+        print(f"Config file to mount: {args.config_file}")
+    else:
+        print("No custom config file specified")
+    
+    # Validate assignments and pass files
+    valid_assignments = validate_assignments(args.assignments)
+    valid_pass_files = validate_pass_files(args.pass_files)
+    
+    if not valid_assignments:
+        print("No valid assignment directories found!")
+        sys.exit(1)
+    
+    # Step 1: Create docker-compose.override.yml with volume mappings for assignments
+    print("\nStep 1: Creating volume mappings for assignments and config...")
+    if not create_docker_compose_override(valid_assignments, args.config_file):
+        print("Failed to create docker-compose override")
+        sys.exit(1)
+    
+    # Step 2: Start the container (unless --no-build is specified)
     if not args.no_build:
-        print("\nStep 1: Starting SQTPM container...")
+        print("\nStep 2: Starting SQTPM container with volume mappings...")
+        
+        print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
+        
+        # Set environment variables for docker-compose build
+        env = os.environ.copy()
+        env.update({
+            'HOST_UID': str(host_uid),
+            'HOST_GID': str(host_gid),
+            'HOST_USER': host_user
+        })
+        
         try:
-            run_command(["docker-compose", "up", "-d", "--build"])
+            result = subprocess.run(
+                ["docker-compose", "up", "-d", "--build"],
+                check=True,
+                env=env
+            )
             print("Container started successfully")
         except subprocess.CalledProcessError as e:
             print(f"Error starting container: {e}")
@@ -298,35 +446,35 @@ Examples:
             print("Container failed to start properly")
             sys.exit(1)
     else:
-        print("\nStep 1: Skipping container startup (--no-build specified)")
+        print("\nStep 2: Skipping container startup (--no-build specified)")
+        # Still need to restart container to pick up new volume mappings
+        print("Restarting container to pick up new volume mappings...")
+        try:
+            run_command(["docker-compose", "restart"])
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Could not restart container: {e}")
     
-    # Step 2: Copy password files to container
-    if args.pass_files:
-        print(f"\nStep 2: Copying {len(args.pass_files)} password file(s) to container...")
-        if not copy_pass_files_to_container(args.pass_files, args.container):
+    # Step 3: Copy password files to container
+    if valid_pass_files:
+        print(f"\nStep 3: Copying {len(valid_pass_files)} password file(s) to container...")
+        if not copy_pass_files_to_container(valid_pass_files, args.container):
             print("Failed to copy password files")
             sys.exit(1)
     else:
-        print("\nStep 2: No password files to copy")
-    
-    # Step 3: Copy assignments to container
-    print(f"\nStep 3: Copying {len(args.assignments)} assignment(s) to container...")
-    if not copy_assignments_to_container(args.assignments, args.container):
-        print("Failed to copy assignments")
-        sys.exit(1)
+        print("\nStep 3: No password files to copy")
     
     # Step 4: Create password file symbolic links
-    if args.pass_files:
+    if valid_pass_files:
         print(f"\nStep 4: Creating password file symbolic links...")
-        if not create_pass_file_links(args.assignments, args.pass_files, args.container):
+        if not create_pass_file_links(valid_assignments, valid_pass_files, args.container):
             print("Failed to create password file links")
             sys.exit(1)
     else:
         print("\nStep 4: No password file links to create")
     
-    # Step 5: Fix permissions
-    print("\nStep 5: Fixing permissions...")
-    if not fix_permissions_in_container(args.container):
+    # Step 5: Fix permissions and ownership
+    print("\nStep 5: Fixing permissions and ownership...")
+    if not fix_permissions_in_container(args.container, host_user):
         print("Failed to fix permissions")
         sys.exit(1)
     
@@ -345,10 +493,23 @@ Examples:
     print("\n" + "=" * 40)
     print("Deployment completed successfully!")
     print(f"SQTPM is available at: http://localhost:8080")
-    print(f"Assignments deployed: {', '.join(args.assignments)}")
-    if args.pass_files:
-        print(f"Password files deployed: {', '.join(args.pass_files)}")
+    
+    # Show assignment mapping (original path -> basename in container)
+    assignment_basenames = get_assignment_basenames(valid_assignments)
+    assignment_mappings = []
+    for orig_path, basename in zip(valid_assignments, assignment_basenames):
+        if orig_path != basename:
+            assignment_mappings.append(f"{orig_path} -> {basename}")
+        else:
+            assignment_mappings.append(basename)
+    
+    print(f"Assignments mounted as volumes: {', '.join(assignment_mappings)}")
+    if valid_pass_files:
+        print(f"Password files copied to container: {', '.join(valid_pass_files)}")
         print("Password file symbolic links created in assignment directories")
+    if args.config_file and os.path.exists(args.config_file):
+        print(f"Config file mounted: {args.config_file} -> sqtpm.cfg")
+    print("Assignment directories are mounted as volumes - changes will reflect immediately!")
     
     # Show container status
     print(f"\nContainer status:")

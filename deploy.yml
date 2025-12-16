@@ -1,0 +1,23 @@
+# SQTPM Deployment Configuration
+# This file defines assignment-password file pairs for deployment
+
+# Option 1: Simple assignment -> password files mapping
+assignments:
+  test_assignment1: ["users1.pass"]
+  test_assignment2: ["users2.pass"]
+
+# Option 2: Deployment groups (alternative format)
+# deployments:
+#   - assignments: ["assignment1", "assignment2"]
+#     password_files: ["users.pass", "admins.pass"]
+#   - assignments: ["assignment3"]
+#     password_files: ["special.pass"]
+
+# Optional: Custom configuration file
+# config_file: "custom-sqtpm.cfg"
+
+# Optional: Container name override
+# container: "my-sqtpm-web-1"
+
+# Optional: Skip container build/start
+no_build: true

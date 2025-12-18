@@ -37,7 +37,8 @@ YAML Configuration Format (deploy.yml):
       assignment3: []
     config_file: "custom-sqtpm.cfg"  # optional
     container: "my-sqtpm-web-1"      # optional
-    no_build: true                   # optional
+    build_only: true                 # optional - only build image, don't deploy
+    no_rebuild: true                 # optional - start without rebuilding image
 """
 
 import sys
@@ -486,8 +487,14 @@ assignments:
 # Optional: Container name override
 # container: "my-sqtpm-web-1"
 
-# Optional: Skip container build/start
-# no_build: true
+# Optional: Only build the docker image without deploying
+# build_only: true
+
+# Optional: Start container without rebuilding image  
+# no_rebuild: true
+
+# Optional: Stop and remove existing containers
+# cleanup: true
 """
     
     with open("deploy.yml", "w") as f:
@@ -539,6 +546,9 @@ Examples:
   python deploy.py --container my-sqtpm-web-1 assignment1:users.pass
   python deploy.py --list-pass-files
   python deploy.py --create-example-config
+  python deploy.py --build-only                              # Only build image
+  python deploy.py --no-rebuild assignment1:users.pass      # Start without rebuilding
+  python deploy.py --cleanup                                 # Stop and remove containers
 
 Assignment-Password Pair Format:
   assignment_dir:password_file.pass
@@ -577,9 +587,21 @@ YAML Configuration (deploy.yml):
     )
     
     parser.add_argument(
-        '--no-build',
+        '--build-only',
         action='store_true',
-        help='Skip docker-compose up (assume container is already running)'
+        help='Only build the docker image, do not start container or deploy'
+    )
+    
+    parser.add_argument(
+        '--no-rebuild',
+        action='store_true',
+        help='Start container without rebuilding image (assumes image already exists)'
+    )
+    
+    parser.add_argument(
+        '--cleanup',
+        action='store_true',
+        help='Stop and remove any existing containers from this deployment'
     )
     
     parser.add_argument(
@@ -623,7 +645,9 @@ YAML Configuration (deploy.yml):
     assignment_pass_pairs = []
     config_file_override = args.config_file
     container_override = args.container
-    no_build_override = args.no_build
+    build_only_override = args.build_only
+    no_rebuild_override = args.no_rebuild
+    cleanup_override = args.cleanup
     
     if args.assignment_pairs:
         # Use command line arguments
@@ -648,8 +672,14 @@ YAML Configuration (deploy.yml):
         if container_override == 'sqtpm-sqtpm-web-1' and 'container' in yaml_config:
             container_override = yaml_config['container']
         
-        if not no_build_override and yaml_config.get('no_build', False):
-            no_build_override = True
+        if not build_only_override and yaml_config.get('build_only', False):
+            build_only_override = True
+            
+        if not no_rebuild_override and yaml_config.get('no_rebuild', False):
+            no_rebuild_override = True
+            
+        if not cleanup_override and yaml_config.get('cleanup', False):
+            cleanup_override = True
     
     print("Parsed assignment-password pairs:")
     for assignments, pass_files in assignment_pass_pairs:
@@ -670,6 +700,50 @@ YAML Configuration (deploy.yml):
     else:
         print("No custom config file specified")
     
+    # Handle cleanup mode
+    if cleanup_override:
+        print("\nCleaning up existing containers...")
+        try:
+            # Stop and remove containers using docker-compose
+            run_command(["docker-compose", "down", "-v"], check=False)
+            print("Containers stopped and removed successfully")
+            
+            # Also remove any override file
+            if os.path.exists("docker-compose.override.yml"):
+                os.remove("docker-compose.override.yml")
+                print("Removed docker-compose.override.yml")
+            
+            return
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+            sys.exit(1)
+    
+    # Handle build-only mode
+    if build_only_override:
+        print("\nBuild-only mode: Building docker image...")
+        print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
+        
+        # Set environment variables for docker-compose build
+        env = os.environ.copy()
+        env.update({
+            'HOST_UID': str(host_uid),
+            'HOST_GID': str(host_gid),
+            'HOST_USER': host_user
+        })
+        
+        try:
+            result = subprocess.run(
+                ["docker-compose", "build"],
+                check=True,
+                env=env
+            )
+            print("Docker image built successfully")
+            print("Use --no-rebuild flag to start container without rebuilding")
+            return
+        except subprocess.CalledProcessError as e:
+            print(f"Error building image: {e}")
+            sys.exit(1)
+    
     # Validate assignment-password pairs
     valid_assignment_pass_pairs = validate_assignment_pass_pairs(assignment_pass_pairs)
     
@@ -687,43 +761,44 @@ YAML Configuration (deploy.yml):
         print("Failed to update docker-compose override")
         sys.exit(1)
     
-    # Step 2: Start the container (unless --no-build is specified)
-    if not no_build_override:
-        print("\nStep 2: Starting SQTPM container with volume mappings...")
-        
-        print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
-        
-        # Set environment variables for docker-compose build
-        env = os.environ.copy()
-        env.update({
-            'HOST_UID': str(host_uid),
-            'HOST_GID': str(host_gid),
-            'HOST_USER': host_user
-        })
-        
-        try:
+    # Step 2: Start the container
+    print("\nStep 2: Starting SQTPM container with volume mappings...")
+    
+    print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
+    
+    # Set environment variables for docker-compose
+    env = os.environ.copy()
+    env.update({
+        'HOST_UID': str(host_uid),
+        'HOST_GID': str(host_gid),
+        'HOST_USER': host_user
+    })
+    
+    try:
+        if no_rebuild_override:
+            # Start without rebuilding (assumes image exists)
+            result = subprocess.run(
+                ["docker-compose", "up", "-d"],
+                check=True,
+                env=env
+            )
+            print("Container started successfully (without rebuilding)")
+        else:
+            # Build and start
             result = subprocess.run(
                 ["docker-compose", "up", "-d", "--build"],
                 check=True,
                 env=env
             )
-            print("Container started successfully")
-        except subprocess.CalledProcessError as e:
-            print(f"Error starting container: {e}")
-            sys.exit(1)
-        
-        # Wait for container to be ready
-        if not wait_for_container(container_override):
-            print("Container failed to start properly")
-            sys.exit(1)
-    else:
-        print("\nStep 2: Skipping container startup (--no-build specified)")
-        # Still need to restart container to pick up new volume mappings
-        print("Restarting container to pick up new volume mappings...")
-        try:
-            run_command(["docker-compose", "restart"])
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Could not restart container: {e}")
+            print("Container built and started successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"Error starting container: {e}")
+        sys.exit(1)
+    
+    # Wait for container to be ready
+    if not wait_for_container(container_override):
+        print("Container failed to start properly")
+        sys.exit(1)
     
     # Step 3: Create password file symbolic links based on assignment-password pairs
     if any(pass_files for _, pass_files in valid_assignment_pass_pairs):

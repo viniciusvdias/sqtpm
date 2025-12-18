@@ -704,8 +704,8 @@ YAML Configuration (deploy.yml):
     if cleanup_override:
         print("\nCleaning up existing containers...")
         try:
-            # Stop and remove containers using docker-compose
-            run_command(["docker-compose", "down", "-v"], check=False)
+            # Stop and remove containers using docker compose
+            run_command(["docker", "compose", "down", "-v"], check=False)
             print("Containers stopped and removed successfully")
             
             # Also remove any override file
@@ -723,7 +723,7 @@ YAML Configuration (deploy.yml):
         print("\nBuild-only mode: Building docker image...")
         print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
         
-        # Set environment variables for docker-compose build
+        # Set environment variables for docker compose build
         env = os.environ.copy()
         env.update({
             'HOST_UID': str(host_uid),
@@ -733,7 +733,7 @@ YAML Configuration (deploy.yml):
         
         try:
             result = subprocess.run(
-                ["docker-compose", "build"],
+                ["docker", "compose", "build"],
                 check=True,
                 env=env
             )
@@ -766,7 +766,7 @@ YAML Configuration (deploy.yml):
     
     print(f"Building with host user: {host_user} (UID:{host_uid}, GID:{host_gid})")
     
-    # Set environment variables for docker-compose
+    # Set environment variables for docker compose
     env = os.environ.copy()
     env.update({
         'HOST_UID': str(host_uid),
@@ -778,7 +778,7 @@ YAML Configuration (deploy.yml):
         if no_rebuild_override:
             # Start without rebuilding (assumes image exists)
             result = subprocess.run(
-                ["docker-compose", "up", "-d"],
+                ["docker", "compose", "up", "-d"],
                 check=True,
                 env=env
             )
@@ -786,7 +786,7 @@ YAML Configuration (deploy.yml):
         else:
             # Build and start
             result = subprocess.run(
-                ["docker-compose", "up", "-d", "--build"],
+                ["docker", "compose", "up", "-d", "--build"],
                 check=True,
                 env=env
             )

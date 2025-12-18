@@ -15,7 +15,7 @@ python deploy.py
 
 ## Requirements
 
-- Docker & Docker Compose
+- Docker & Docker Compose (v2.0+)
 - Python 3.6+ with PyYAML (`pip install PyYAML`)
 
 ## Usage

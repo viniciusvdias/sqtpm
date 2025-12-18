@@ -110,12 +110,12 @@ def update_docker_compose_override(assignments, config_file=None, pass_files=Non
             assignment_basename = os.path.basename(assignment.rstrip('/'))
             if not assignment_basename:  # Handle edge case
                 assignment_basename = os.path.basename(abs_path)
-            volume_mapping = f"{abs_path}:/usr/local/apache2/htdocs/{assignment_basename}"
+            volume_mapping = f"{abs_path}:/var/www/html/{assignment_basename}"
             
             # Check if this assignment is already mounted
             already_exists = False
             for existing_volume in existing_volumes:
-                if f":/usr/local/apache2/htdocs/{assignment_basename}" in existing_volume:
+                if f":/var/www/html/{assignment_basename}" in existing_volume:
                     print(f"Assignment '{assignment_basename}' already mounted, skipping")
                     already_exists = True
                     break
@@ -130,12 +130,12 @@ def update_docker_compose_override(assignments, config_file=None, pass_files=Non
             if os.path.exists(pass_file) and os.path.isfile(pass_file):
                 abs_pass_path = os.path.abspath(pass_file)
                 pass_file_basename = os.path.basename(pass_file)
-                pass_volume_mapping = f"{abs_pass_path}:/usr/local/apache2/htdocs/{pass_file_basename}"
+                pass_volume_mapping = f"{abs_pass_path}:/var/www/html/{pass_file_basename}"
                 
                 # Check if this password file is already mounted
                 pass_already_exists = False
                 for existing_volume in existing_volumes:
-                    if f":/usr/local/apache2/htdocs/{pass_file_basename}" in existing_volume:
+                    if f":/var/www/html/{pass_file_basename}" in existing_volume:
                         print(f"Password file '{pass_file_basename}' already mounted, skipping")
                         pass_already_exists = True
                         break
@@ -148,15 +148,15 @@ def update_docker_compose_override(assignments, config_file=None, pass_files=Non
     new_config_volumes = []
     if config_file and os.path.exists(config_file) and os.path.isfile(config_file):
         abs_config_path = os.path.abspath(config_file)
-        config_volume_mapping = f"{abs_config_path}:/usr/local/apache2/htdocs/sqtpm.cfg"
+        config_volume_mapping = f"{abs_config_path}:/var/www/html/sqtpm.cfg"
         
         # Check if config file is already mounted
         config_already_exists = False
         for existing_volume in existing_volumes:
-            if ":/usr/local/apache2/htdocs/sqtpm.cfg" in existing_volume:
+            if ":/var/www/html/sqtpm.cfg" in existing_volume:
                 print(f"Config file already mounted, updating with: {config_file} -> sqtpm.cfg")
                 # Replace existing config mapping
-                existing_volumes = [v for v in existing_volumes if ":/usr/local/apache2/htdocs/sqtpm.cfg" not in v]
+                existing_volumes = [v for v in existing_volumes if ":/var/www/html/sqtpm.cfg" not in v]
                 config_already_exists = False  # Allow replacement
                 break
         
@@ -231,7 +231,7 @@ def create_pass_file_links(assignment_pass_pairs, container_name="sqtpm-sqtpm-we
         print("No assignment-password pairs specified, skipping symbolic link creation")
         return True
     
-    server_root = "/usr/local/apache2/htdocs"
+    server_root = "/var/www/html"
     
     print(f"Creating symbolic links for assignment-password pairs...")
     
@@ -509,14 +509,14 @@ def fix_permissions_in_container(container_name="sqtpm-sqtpm-web-1", host_user=N
         run_command([
             "docker", "exec", container_name,
             "/bin/sh", "-c",
-            f"chown -R {host_user}:www-data /usr/local/apache2/htdocs/"
+            f"chown -R {host_user}:www-data /var/www/html/"
         ])
         
         # Then run the fix-perms script as the host user
         run_command([
             "docker", "exec", container_name,
             "/bin/sh", "-c",
-            f"su -s /bin/sh {host_user} -c 'cd /usr/local/apache2/htdocs && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh'"
+            f"su -s /bin/sh {host_user} -c 'cd /var/www/html && chmod +x Utils/fix-perms.sh && sh Utils/fix-perms.sh'"
         ])
         print("Permissions and ownership fixed successfully")
         return True
@@ -746,7 +746,7 @@ YAML Configuration (deploy.yml):
         run_command([
             "docker", "exec", container_override,
             "/bin/sh", "-c",
-            "pkill -HUP httpd || true"
+            "apache2ctl graceful || true"
         ], check=False)
         print("Apache server reloaded successfully")
     except subprocess.CalledProcessError as e:

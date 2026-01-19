@@ -15,4 +15,4 @@ services:
     environment:
       - APACHE_RUN_USER=${HOST_USER:-www-data}
       - APACHE_RUN_GROUP=www-data
-    restart: unless-stopped
+    restart: always

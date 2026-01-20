@@ -178,7 +178,6 @@ def update_docker_compose_override(assignments, config_file=None, pass_files=Non
         return True
     
     override_config = {
-        'version': '3.8',
         'services': {
             'sqtpm-web': {
                 'volumes': all_volumes

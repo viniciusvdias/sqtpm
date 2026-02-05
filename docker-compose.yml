@@ -10,6 +10,8 @@ services:
       - "8080:80"
     volumes:
       - ./data:/var/www/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - APACHE_RUN_USER=${HOST_USER:-www-data}
       - APACHE_RUN_GROUP=www-data

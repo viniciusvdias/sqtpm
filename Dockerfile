@@ -7,6 +7,7 @@ ARG HOST_USER=user
 
 # Install Apache and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
     apache2 \
     apache2-utils \
     bash \

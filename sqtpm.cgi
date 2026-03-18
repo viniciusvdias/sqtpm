@@ -182,10 +182,10 @@ sub login_form {
 <form method="post" action="sqtpm.cgi" enctype="multipart/form-data" name="sqtpm">
 <table cellspacing="5" border="0">
 <tr><td>usuário:</td><td>
-<input onkeypress="enterh(event,'u')" type="text" name="uid" size="10" maxlength="20">
+<input onkeypress="enterh(event,'u')" type="text" name="uid" size="10" maxlength="50">
 </td></tr>
 <tr><td>senha:</td><td>
-<input onkeypress="enterh(event,'p')" type="password" name="pwd" size="10" maxlength="20">
+<input onkeypress="enterh(event,'p')" type="password" name="pwd" size="10" maxlength="50">
 </td></tr>
 </table>
 <input type="hidden" name="action">

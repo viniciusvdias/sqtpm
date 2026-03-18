@@ -155,13 +155,13 @@ sub passwd_form {
 <form name="pass" action="sqtpm-pwd.cgi" method="POST" enctype="multipart/form-data">
 <table cellspacing=5 border=0>
 <tr><td>usuário:<td>
-<input onkeypress="enterh(event,'u')" type="text" name="uid" size="10" maxlength="20">
+<input onkeypress="enterh(event,'u')" type="text" name="uid" size="10" maxlength="50">
 <tr><td>senha atual:<td>
-<input onkeypress="enterh(event,'o')" type="password" name="oldpwd" size="10" maxlength="20">
+<input onkeypress="enterh(event,'o')" type="password" name="oldpwd" size="10" maxlength="50">
 <tr><td>senha nova:<td>
-<input onkeypress="enterh(event,'n')" type="password" name="newpwd" size="10" maxlength="20">
+<input onkeypress="enterh(event,'n')" type="password" name="newpwd" size="10" maxlength="50">
 <tr><td>confirmação:<td>
-<input onkeypress="enterh(event,'c')" type="password" name="repwd" size="10" maxlength="20">
+<input onkeypress="enterh(event,'c')" type="password" name="repwd" size="10" maxlength="50">
 </table>
 <input type="hidden" name="setpwd" value=0>
 <hr>
